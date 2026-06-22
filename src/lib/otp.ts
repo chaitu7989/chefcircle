@@ -28,11 +28,11 @@ export async function sendOTPSMS(phone: string, otp: string): Promise<{ success:
   }
 
   try {
-    // Fast2SMS Bulk API — OTP route
+    // Fast2SMS Quick SMS route — no website verification required
     const url = new URL('https://www.fast2sms.com/dev/bulkV2')
     url.searchParams.set('authorization', apiKey)
-    url.searchParams.set('route', 'otp')
-    url.searchParams.set('variables_values', otp)
+    url.searchParams.set('route', 'q')
+    url.searchParams.set('message', `Your ChefCircle OTP is ${otp}. Valid for 5 minutes. Do not share with anyone.`)
     url.searchParams.set('flash', '0')
     url.searchParams.set('numbers', phone)
 

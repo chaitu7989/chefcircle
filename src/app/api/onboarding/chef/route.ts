@@ -18,9 +18,16 @@ export async function POST(req: NextRequest) {
 
   const supabase = getSupabaseAdmin()
 
+  const profileUpdate: Record<string, unknown> = {
+    full_name: full_name.trim(),
+    role: 'chef',
+    onboarding_complete: true,
+  }
+  if (email?.trim()) profileUpdate.email = email.trim()
+
   const { error: profileErr } = await supabase
     .from('profiles')
-    .update({ full_name: full_name.trim(), email: email?.trim() || null, role: 'chef', onboarding_complete: true })
+    .update(profileUpdate)
     .eq('id', session.userId)
 
   if (profileErr) return NextResponse.json({ error: profileErr.message }, { status: 500 })

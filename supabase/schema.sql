@@ -21,14 +21,15 @@ CREATE INDEX IF NOT EXISTS idx_otp_phone ON otp_verifications (phone, verified);
 -- ──────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS profiles (
   id                  UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  phone               TEXT UNIQUE NOT NULL,
+  phone               TEXT UNIQUE,           -- nullable for Google/Apple users
+  email               TEXT UNIQUE,           -- nullable for phone-only users
   full_name           TEXT,
-  email               TEXT,
   avatar_url          TEXT,
   role                TEXT CHECK (role IN ('customer', 'chef')),
   onboarding_complete BOOLEAN DEFAULT FALSE,
   created_at          TIMESTAMPTZ DEFAULT NOW(),
-  updated_at          TIMESTAMPTZ DEFAULT NOW()
+  updated_at          TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT phone_or_email CHECK (phone IS NOT NULL OR email IS NOT NULL)
 );
 
 -- ──────────────────────────────────────────────────────────────
