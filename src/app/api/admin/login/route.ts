@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-export const ADMIN_COOKIE = 'cc_admin'
+const ADMIN_COOKIE = 'cc_admin'
 
 export async function POST(req: NextRequest) {
   const { password } = await req.json()
