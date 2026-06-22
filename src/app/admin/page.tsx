@@ -1,246 +1,254 @@
 'use client'
 
-import { useState } from 'react'
-import { Users, ChefHat, Package, TrendingUp, CheckCircle, XCircle, Eye, ShieldAlert, Star, MapPin } from 'lucide-react'
-import { mockKitchens, mockOrders } from '@/lib/mock-data'
-import type { Kitchen, KitchenStatus } from '@/lib/types'
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 
-type Tab = 'overview' | 'kitchens' | 'orders'
+type Stats = { totalChefs: number; pendingChefs: number; approvedChefs: number; totalCustomers: number; totalUsers: number }
+type Chef = {
+  id: string; kitchen_name: string; about: string; cuisine_types: string[]
+  years_experience: number; cooking_address: string; service_radius: number
+  verification_status: string; created_at: string
+  profiles: { full_name: string; email: string; phone: string }
+}
+type Customer = {
+  id: string; dietary_preferences: string[]; created_at: string
+  profiles: { full_name: string; email: string; phone: string }
+}
 
-export default function AdminPage() {
-  const [tab, setTab] = useState<Tab>('overview')
-  const [kitchens, setKitchens] = useState(mockKitchens)
-  const [statusFilter, setStatusFilter] = useState<KitchenStatus | 'all'>('all')
+const STATUS_COLORS: Record<string, { bg: string; color: string; label: string }> = {
+  pending:  { bg: 'rgba(251,191,36,0.1)',  color: '#FBBF24', label: 'Pending'  },
+  approved: { bg: 'rgba(52,211,153,0.1)',  color: '#34D399', label: 'Approved' },
+  rejected: { bg: 'rgba(248,113,113,0.1)', color: '#F87171', label: 'Rejected' },
+}
 
-  const approveKitchen = (id: string) => setKitchens(prev => prev.map(k => k.id === id ? { ...k, status: 'approved' } : k))
-  const rejectKitchen = (id: string) => setKitchens(prev => prev.map(k => k.id === id ? { ...k, status: 'rejected' } : k))
-  const suspendKitchen = (id: string) => setKitchens(prev => prev.map(k => k.id === id ? { ...k, status: 'suspended' } : k))
+export default function AdminDashboard() {
+  const router = useRouter()
+  const [tab, setTab] = useState<'overview' | 'chefs' | 'customers'>('overview')
+  const [stats, setStats] = useState<Stats | null>(null)
+  const [chefs, setChefs] = useState<Chef[]>([])
+  const [customers, setCustomers] = useState<Customer[]>([])
+  const [updating, setUpdating] = useState<string | null>(null)
 
-  const stats = {
-    totalKitchens: kitchens.length,
-    approvedKitchens: kitchens.filter(k => k.status === 'approved').length,
-    onlineKitchens: kitchens.filter(k => k.is_online).length,
-    totalOrders: mockOrders.length,
-    revenue: mockOrders.reduce((s, o) => s + o.total_amount, 0),
-    pendingKitchens: kitchens.filter(k => k.status === 'pending').length,
+  async function checkAuth() {
+    const res = await fetch('/api/admin/stats')
+    if (res.status === 401) { router.replace('/admin/login'); return }
+    setStats(await res.json())
   }
 
-  const filteredKitchens = statusFilter === 'all' ? kitchens : kitchens.filter(k => k.status === statusFilter)
+  async function loadChefs() {
+    const res = await fetch('/api/admin/chefs')
+    if (res.ok) setChefs((await res.json()).chefs ?? [])
+  }
+
+  async function loadCustomers() {
+    const res = await fetch('/api/admin/customers')
+    if (res.ok) setCustomers((await res.json()).customers ?? [])
+  }
+
+  useEffect(() => { checkAuth() }, [])
+  useEffect(() => {
+    if (tab === 'chefs') loadChefs()
+    if (tab === 'customers') loadCustomers()
+  }, [tab])
+
+  async function updateChefStatus(chefId: string, status: string) {
+    setUpdating(chefId)
+    await fetch('/api/admin/chefs', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chefId, status }),
+    })
+    await Promise.all([loadChefs(), checkAuth()])
+    setUpdating(null)
+  }
+
+  async function handleLogout() {
+    await fetch('/api/admin/logout', { method: 'POST' })
+    router.replace('/admin/login')
+  }
+
+  const StatCard = ({ label, value, sub, color }: { label: string; value: number; sub?: string; color: string }) => (
+    <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '16px', padding: '24px', flex: 1, minWidth: '160px' }}>
+      <div style={{ fontSize: '36px', fontWeight: 900, color }}>{value}</div>
+      <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.6)', marginTop: '4px', fontWeight: 600 }}>{label}</div>
+      {sub && <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.3)', marginTop: '2px' }}>{sub}</div>}
+    </div>
+  )
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+    <div style={{ minHeight: '100vh', background: '#0A0A0A', color: '#fff', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
       {/* Header */}
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-3xl font-extrabold text-stone-800">Admin Dashboard</h1>
-          <p className="text-stone-500 mt-1">Manage ChefCircle platform</p>
+      <div style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid rgba(255,255,255,0.06)', padding: '16px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <span style={{ fontSize: '20px', fontWeight: 900 }}>
+            <span style={{ color: '#FF6B35' }}>Chef</span><span>Circle</span>
+          </span>
+          <span style={{ background: 'rgba(255,107,53,0.12)', color: '#FF6B35', fontSize: '10px', fontWeight: 800, padding: '3px 8px', borderRadius: '6px', letterSpacing: '0.06em' }}>ADMIN PANEL</span>
         </div>
-        <div className="flex items-center gap-2 bg-orange-50 px-4 py-2 rounded-2xl">
-          <ShieldAlert className="w-4 h-4 text-orange-500" />
-          <span className="text-sm font-semibold text-orange-600">Admin Access</span>
-        </div>
+        <button onClick={handleLogout} style={{ background: 'rgba(248,113,113,0.1)', color: '#F87171', border: '1px solid rgba(248,113,113,0.2)', borderRadius: '8px', padding: '8px 16px', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}>
+          Sign Out
+        </button>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-2 mb-8 border-b border-stone-200">
-        {(['overview', 'kitchens', 'orders'] as Tab[]).map(t => (
-          <button key={t} onClick={() => setTab(t)}
-            className={`px-5 py-2.5 text-sm font-semibold capitalize border-b-2 -mb-px transition-colors ${tab === t ? 'border-orange-500 text-orange-600' : 'border-transparent text-stone-500 hover:text-stone-700'}`}>
-            {t}
-          </button>
-        ))}
-      </div>
+      <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '32px 24px' }}>
+        {/* Tabs */}
+        <div style={{ display: 'flex', gap: '4px', background: 'rgba(255,255,255,0.04)', borderRadius: '12px', padding: '4px', marginBottom: '32px', width: 'fit-content' }}>
+          {(['overview', 'chefs', 'customers'] as const).map(t => (
+            <button key={t} onClick={() => setTab(t)} style={{
+              padding: '9px 22px', borderRadius: '9px', border: 'none', cursor: 'pointer',
+              fontWeight: 700, fontSize: '13px', textTransform: 'capitalize',
+              background: tab === t ? '#FF6B35' : 'transparent',
+              color: tab === t ? '#fff' : 'rgba(255,255,255,0.45)',
+              transition: 'all 0.15s',
+            }}>{t}</button>
+          ))}
+        </div>
 
-      {/* Overview */}
-      {tab === 'overview' && (
-        <div>
-          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
-            {[
-              { label: 'Total Kitchens', value: stats.totalKitchens, icon: ChefHat, color: 'text-orange-600', bg: 'bg-orange-50' },
-              { label: 'Approved Kitchens', value: stats.approvedKitchens, icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-50' },
-              { label: 'Online Now', value: stats.onlineKitchens, icon: Users, color: 'text-blue-600', bg: 'bg-blue-50' },
-              { label: 'Total Orders', value: stats.totalOrders, icon: Package, color: 'text-purple-600', bg: 'bg-purple-50' },
-              { label: 'Total Revenue', value: `₹${stats.revenue}`, icon: TrendingUp, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-              { label: 'Pending Approvals', value: stats.pendingKitchens, icon: ShieldAlert, color: 'text-amber-600', bg: 'bg-amber-50' },
-            ].map(s => (
-              <div key={s.label} className="bg-white rounded-2xl border border-stone-100 p-5">
-                <div className={`w-10 h-10 ${s.bg} rounded-xl flex items-center justify-center mb-3`}>
-                  <s.icon className={`w-5 h-5 ${s.color}`} />
+        {/* OVERVIEW */}
+        {tab === 'overview' && (
+          <div>
+            <h2 style={{ fontSize: '22px', fontWeight: 900, marginBottom: '6px' }}>Platform Overview</h2>
+            <p style={{ fontSize: '13px', color: 'rgba(255,255,255,0.35)', marginBottom: '28px' }}>Real-time stats across ChefCircle</p>
+            {stats ? (
+              <>
+                <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', marginBottom: '28px' }}>
+                  <StatCard label="Total Users" value={stats.totalUsers} color="#FF6B35" />
+                  <StatCard label="Total Chefs" value={stats.totalChefs} color="#A78BFA" />
+                  <StatCard label="Pending Approval" value={stats.pendingChefs} sub="needs your review" color="#FBBF24" />
+                  <StatCard label="Approved Chefs" value={stats.approvedChefs} color="#34D399" />
+                  <StatCard label="Customers" value={stats.totalCustomers} color="#60A5FA" />
                 </div>
-                <div className="text-2xl font-extrabold text-stone-800">{s.value}</div>
-                <div className="text-xs text-stone-500 mt-1">{s.label}</div>
-              </div>
-            ))}
-          </div>
-
-          {/* Recent Activity */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Top Kitchens */}
-            <div className="bg-white rounded-2xl border border-stone-100 p-5">
-              <h3 className="font-bold text-stone-800 mb-4">Top Kitchens by Orders</h3>
-              <div className="space-y-3">
-                {[...kitchens].sort((a, b) => b.total_orders - a.total_orders).map((k, i) => (
-                  <div key={k.id} className="flex items-center gap-3">
-                    <span className="w-6 h-6 bg-orange-100 text-orange-600 rounded-full text-xs font-bold flex items-center justify-center flex-shrink-0">{i + 1}</span>
-                    <img src={k.chef?.avatar} alt="" className="w-8 h-8 rounded-full" />
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-stone-700 text-sm truncate">{k.name}</p>
-                      <p className="text-xs text-stone-400">{k.area}</p>
+                {stats.pendingChefs > 0 && (
+                  <div style={{ background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.2)', borderRadius: '14px', padding: '20px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+                    <div>
+                      <div style={{ fontWeight: 800, color: '#FBBF24', marginBottom: '4px' }}>⚠ {stats.pendingChefs} chef{stats.pendingChefs > 1 ? 's' : ''} waiting for approval</div>
+                      <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.45)' }}>Review their details and approve or reject to let them go live</div>
                     </div>
-                    <div className="text-right">
-                      <p className="text-sm font-bold text-stone-800">{k.total_orders}</p>
-                      <div className="flex items-center gap-0.5">
-                        <Star className="w-3 h-3 text-amber-400 fill-amber-400" />
-                        <span className="text-xs text-stone-400">{k.rating}</span>
+                    <button onClick={() => setTab('chefs')} style={{ background: '#FBBF24', color: '#000', border: 'none', borderRadius: '9px', padding: '10px 20px', fontWeight: 800, fontSize: '13px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                      Review Chefs →
+                    </button>
+                  </div>
+                )}
+                {stats.pendingChefs === 0 && stats.totalChefs > 0 && (
+                  <div style={{ background: 'rgba(52,211,153,0.05)', border: '1px solid rgba(52,211,153,0.15)', borderRadius: '14px', padding: '20px 24px' }}>
+                    <div style={{ fontWeight: 700, color: '#34D399' }}>✓ All chefs have been reviewed</div>
+                    <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.35)', marginTop: '4px' }}>No pending approvals</div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: '14px' }}>Loading…</div>
+            )}
+          </div>
+        )}
+
+        {/* CHEFS */}
+        {tab === 'chefs' && (
+          <div>
+            <h2 style={{ fontSize: '22px', fontWeight: 900, marginBottom: '6px' }}>Registered Chefs</h2>
+            <p style={{ fontSize: '13px', color: 'rgba(255,255,255,0.35)', marginBottom: '24px' }}>Approve or reject chefs to control who appears on the platform</p>
+            {chefs.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '80px', color: 'rgba(255,255,255,0.25)', fontSize: '15px' }}>No chefs registered yet</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {chefs.map(chef => {
+                  const sc = STATUS_COLORS[chef.verification_status] ?? STATUS_COLORS.pending
+                  return (
+                    <div key={chef.id} style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '16px', padding: '22px 24px' }}>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '14px' }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px', flexWrap: 'wrap' }}>
+                            <span style={{ fontWeight: 800, fontSize: '16px' }}>{chef.profiles?.full_name ?? '—'}</span>
+                            <span style={{ background: sc.bg, color: sc.color, fontSize: '10px', fontWeight: 800, padding: '3px 10px', borderRadius: '99px', letterSpacing: '0.04em', border: `1px solid ${sc.color}25` }}>{sc.label.toUpperCase()}</span>
+                          </div>
+                          <div style={{ fontSize: '14px', color: '#FF6B35', fontWeight: 700, marginBottom: '10px' }}>🍳 {chef.kitchen_name}</div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px', fontSize: '12px', color: 'rgba(255,255,255,0.4)' }}>
+                            {chef.profiles?.email && <span>✉ {chef.profiles.email}</span>}
+                            {chef.profiles?.phone && <span>📱 {chef.profiles.phone}</span>}
+                            {chef.cooking_address && <span>📍 {chef.cooking_address}</span>}
+                            {chef.service_radius && <span>🔄 {chef.service_radius} km</span>}
+                            {chef.years_experience && <span>⭐ {chef.years_experience} yrs exp</span>}
+                          </div>
+                          {chef.cuisine_types?.length > 0 && (
+                            <div style={{ display: 'flex', gap: '6px', marginTop: '10px', flexWrap: 'wrap' }}>
+                              {chef.cuisine_types.map(c => (
+                                <span key={c} style={{ background: 'rgba(255,107,53,0.08)', color: 'rgba(255,107,53,0.8)', fontSize: '11px', fontWeight: 600, padding: '3px 9px', borderRadius: '99px', border: '1px solid rgba(255,107,53,0.15)' }}>{c}</span>
+                              ))}
+                            </div>
+                          )}
+                          {chef.about && <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.3)', marginTop: '10px', maxWidth: '520px', lineHeight: 1.6 }}>{chef.about}</div>}
+                          <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.2)', marginTop: '10px' }}>
+                            Registered {new Date(chef.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          {chef.verification_status !== 'approved' && (
+                            <button onClick={() => updateChefStatus(chef.id, 'approved')} disabled={updating === chef.id}
+                              style={{ background: 'rgba(52,211,153,0.12)', color: '#34D399', border: '1px solid rgba(52,211,153,0.3)', borderRadius: '9px', padding: '10px 20px', fontWeight: 800, fontSize: '13px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                              {updating === chef.id ? '…' : '✓ Approve'}
+                            </button>
+                          )}
+                          {chef.verification_status !== 'rejected' && (
+                            <button onClick={() => updateChefStatus(chef.id, 'rejected')} disabled={updating === chef.id}
+                              style={{ background: 'rgba(248,113,113,0.1)', color: '#F87171', border: '1px solid rgba(248,113,113,0.25)', borderRadius: '9px', padding: '10px 20px', fontWeight: 800, fontSize: '13px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                              {updating === chef.id ? '…' : '✕ Reject'}
+                            </button>
+                          )}
+                          {chef.verification_status !== 'pending' && (
+                            <button onClick={() => updateChefStatus(chef.id, 'pending')} disabled={updating === chef.id}
+                              style={{ background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.35)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '9px', padding: '10px 20px', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}>
+                              Reset to Pending
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* CUSTOMERS */}
+        {tab === 'customers' && (
+          <div>
+            <h2 style={{ fontSize: '22px', fontWeight: 900, marginBottom: '6px' }}>Registered Customers</h2>
+            <p style={{ fontSize: '13px', color: 'rgba(255,255,255,0.35)', marginBottom: '24px' }}>{customers.length} customer{customers.length !== 1 ? 's' : ''} on the platform</p>
+            {customers.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '80px', color: 'rgba(255,255,255,0.25)', fontSize: '15px' }}>No customers yet</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {customers.map(c => (
+                  <div key={c.id} style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '12px', padding: '16px 22px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                      <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: 'rgba(96,165,250,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: '15px', color: '#60A5FA', flexShrink: 0 }}>
+                        {(c.profiles?.full_name?.[0] ?? '?').toUpperCase()}
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: '15px' }}>{c.profiles?.full_name ?? '—'}</div>
+                        <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.35)', marginTop: '2px' }}>{c.profiles?.email ?? c.profiles?.phone ?? '—'}</div>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                      {c.dietary_preferences?.length > 0 && (
+                        <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
+                          {c.dietary_preferences.map(d => (
+                            <span key={d} style={{ background: 'rgba(96,165,250,0.08)', color: '#60A5FA', fontSize: '10px', fontWeight: 600, padding: '3px 8px', borderRadius: '99px', border: '1px solid rgba(96,165,250,0.15)' }}>{d}</span>
+                          ))}
+                        </div>
+                      )}
+                      <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.22)', whiteSpace: 'nowrap' }}>
+                        Joined {new Date(c.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                       </div>
                     </div>
                   </div>
                 ))}
               </div>
-            </div>
-
-            {/* Recent Orders */}
-            <div className="bg-white rounded-2xl border border-stone-100 p-5">
-              <h3 className="font-bold text-stone-800 mb-4">Recent Orders</h3>
-              {mockOrders.length === 0 ? (
-                <p className="text-stone-400 text-sm text-center py-8">No orders yet</p>
-              ) : (
-                <div className="space-y-3">
-                  {mockOrders.map(order => (
-                    <div key={order.id} className="flex items-center justify-between p-3 bg-stone-50 rounded-xl">
-                      <div>
-                        <p className="text-sm font-semibold text-stone-700">#{order.id.toUpperCase()}</p>
-                        <p className="text-xs text-stone-400">{order.kitchen?.name}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-bold text-stone-800">₹{order.total_amount}</p>
-                        <span className={`text-xs font-semibold capitalize px-2 py-0.5 rounded-full ${
-                          order.status === 'delivered' ? 'bg-green-100 text-green-600' :
-                          order.status === 'preparing' ? 'bg-orange-100 text-orange-600' :
-                          'bg-stone-100 text-stone-500'
-                        }`}>{order.status}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            )}
           </div>
-        </div>
-      )}
-
-      {/* Kitchens Tab */}
-      {tab === 'kitchens' && (
-        <div>
-          <div className="flex gap-2 mb-6 flex-wrap">
-            {(['all', 'pending', 'approved', 'rejected', 'suspended'] as const).map(s => (
-              <button key={s} onClick={() => setStatusFilter(s)}
-                className={`px-4 py-2 rounded-full text-sm font-semibold capitalize transition-colors ${statusFilter === s ? 'bg-orange-500 text-white' : 'bg-white text-stone-600 border border-stone-200 hover:border-orange-300'}`}>
-                {s} {s !== 'all' && `(${kitchens.filter(k => k.status === s).length})`}
-              </button>
-            ))}
-          </div>
-
-          <div className="space-y-4">
-            {filteredKitchens.map(kitchen => (
-              <div key={kitchen.id} className="bg-white rounded-2xl border border-stone-100 p-5">
-                <div className="flex items-start gap-4">
-                  <img src={kitchen.chef?.avatar} alt="" className="w-14 h-14 rounded-2xl object-cover border border-stone-100" />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-4 flex-wrap">
-                      <div>
-                        <h3 className="font-bold text-stone-800">{kitchen.name}</h3>
-                        <p className="text-sm text-stone-500">{kitchen.chef?.name} · {kitchen.chef?.phone}</p>
-                        <div className="flex items-center gap-1 text-stone-400 text-xs mt-1">
-                          <MapPin className="w-3 h-3" /> {kitchen.address}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`px-3 py-1 rounded-full text-xs font-bold capitalize ${
-                          kitchen.status === 'approved' ? 'bg-green-100 text-green-700' :
-                          kitchen.status === 'pending' ? 'bg-amber-100 text-amber-700' :
-                          kitchen.status === 'rejected' ? 'bg-red-100 text-red-700' :
-                          'bg-stone-100 text-stone-600'
-                        }`}>{kitchen.status}</span>
-                        <span className={`px-3 py-1 rounded-full text-xs font-bold ${kitchen.is_online ? 'bg-green-100 text-green-700' : 'bg-stone-100 text-stone-500'}`}>
-                          {kitchen.is_online ? '● Online' : '○ Offline'}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap gap-1 mt-3">
-                      {kitchen.categories.map(c => <span key={c} className="px-2 py-0.5 bg-orange-50 text-orange-600 text-xs rounded-full">{c}</span>)}
-                    </div>
-                  </div>
-                </div>
-                {/* Action Buttons */}
-                <div className="flex gap-2 mt-4 pt-4 border-t border-stone-100 flex-wrap">
-                  <button className="flex items-center gap-1.5 px-4 py-2 border border-stone-200 text-stone-600 rounded-xl text-sm font-semibold hover:bg-stone-50">
-                    <Eye className="w-3.5 h-3.5" /> View
-                  </button>
-                  {kitchen.status !== 'approved' && (
-                    <button onClick={() => approveKitchen(kitchen.id)} className="flex items-center gap-1.5 px-4 py-2 bg-green-500 text-white rounded-xl text-sm font-semibold hover:bg-green-600">
-                      <CheckCircle className="w-3.5 h-3.5" /> Approve
-                    </button>
-                  )}
-                  {kitchen.status !== 'rejected' && (
-                    <button onClick={() => rejectKitchen(kitchen.id)} className="flex items-center gap-1.5 px-4 py-2 bg-red-500 text-white rounded-xl text-sm font-semibold hover:bg-red-600">
-                      <XCircle className="w-3.5 h-3.5" /> Reject
-                    </button>
-                  )}
-                  {kitchen.status === 'approved' && (
-                    <button onClick={() => suspendKitchen(kitchen.id)} className="flex items-center gap-1.5 px-4 py-2 bg-amber-500 text-white rounded-xl text-sm font-semibold hover:bg-amber-600">
-                      <ShieldAlert className="w-3.5 h-3.5" /> Suspend
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Orders Tab */}
-      {tab === 'orders' && (
-        <div>
-          {mockOrders.length === 0 ? (
-            <div className="text-center py-20">
-              <Package className="w-12 h-12 text-stone-200 mx-auto mb-4" />
-              <p className="text-stone-400">No orders yet</p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {mockOrders.map(order => (
-                <div key={order.id} className="bg-white rounded-2xl border border-stone-100 p-5">
-                  <div className="flex items-start justify-between gap-4 mb-4">
-                    <div>
-                      <span className="text-lg font-extrabold text-stone-800">#{order.id.toUpperCase()}</span>
-                      <p className="text-sm text-stone-500 mt-0.5">From: {order.kitchen?.name}</p>
-                      <p className="text-xs text-stone-400">{new Date(order.created_at).toLocaleString('en-IN')}</p>
-                    </div>
-                    <span className={`text-sm font-bold capitalize px-3 py-1.5 rounded-full ${
-                      order.status === 'delivered' ? 'bg-green-100 text-green-700' :
-                      order.status === 'preparing' ? 'bg-orange-100 text-orange-700' :
-                      'bg-stone-100 text-stone-600'
-                    }`}>{order.status}</span>
-                  </div>
-                  <div className="space-y-1 border-t border-stone-50 pt-3">
-                    {order.items.map(item => (
-                      <div key={item.dish_id} className="flex justify-between text-sm">
-                        <span className="text-stone-600">{item.dish_name} × {item.quantity}</span>
-                        <span className="font-medium">₹{item.price * item.quantity}</span>
-                      </div>
-                    ))}
-                    <div className="flex justify-between font-bold text-stone-800 pt-2 border-t border-stone-100">
-                      <span>Total</span>
-                      <span>₹{order.total_amount}</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }
