@@ -13,7 +13,7 @@ export default function CallbackPage() {
     const error = params.get('error')
 
     if (error || !code) {
-      router.replace('/auth/login?error=google_failed')
+      router.replace(`/auth/login?error=${error || 'no_code'}`)
       return
     }
 
@@ -30,8 +30,7 @@ export default function CallbackPage() {
         if (data.redirectTo) {
           router.replace(data.redirectTo)
         } else {
-          setStatus('Something went wrong…')
-          router.replace('/auth/login?error=google_failed')
+          router.replace(`/auth/login?error=${encodeURIComponent(data.error || 'google_failed')}`)
         }
       })
       .catch(() => router.replace('/auth/login?error=google_failed'))

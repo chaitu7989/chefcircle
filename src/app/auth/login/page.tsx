@@ -104,7 +104,9 @@ function LoginPageInner() {
   const [googleLoading, setGoogleLoading] = useState(false)
   const [error, setError] = useState(
     urlError === 'google_failed' ? 'Google sign-in failed. Please try again.' :
-    urlError === 'no_code' ? 'Google sign-in was cancelled.' : ''
+    urlError === 'access_denied' ? 'Google sign-in was cancelled.' :
+    urlError === 'no_code' ? 'Google sign-in was cancelled.' :
+    urlError && urlError !== '' ? `Error: ${urlError}` : ''
   )
   const [search, setSearch] = useState('')
   const dropdownRef = useRef<HTMLDivElement>(null)
