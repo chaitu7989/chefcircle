@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
 import { ArrowRight, Loader2, ChevronDown, Phone } from 'lucide-react'
-import { createClient } from '@supabase/supabase-js'
 
 // ── Country list ─────────────────────────────────────────────
 const COUNTRIES = [
@@ -150,26 +149,17 @@ function LoginPageInner() {
     }
   }
 
-  const handleGoogle = async () => {
+  const handleGoogle = () => {
     setGoogleLoading(true)
-    setError('')
-    try {
-      const supabase = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-      )
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
-        },
-      })
-      if (error) setError(error.message)
-    } catch {
-      setError('Google sign-in failed. Please try again.')
-    } finally {
-      setGoogleLoading(false)
-    }
+    const params = new URLSearchParams({
+      client_id: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID!,
+      redirect_uri: `${window.location.origin}/auth/callback`,
+      response_type: 'code',
+      scope: 'openid email profile',
+      access_type: 'offline',
+      prompt: 'select_account',
+    })
+    window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params}`
   }
 
   return (

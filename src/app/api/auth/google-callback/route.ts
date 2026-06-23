@@ -1,33 +1,50 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
 import { getSupabaseAdmin } from '@/lib/supabase-server'
 import { signSession, COOKIE_NAME, SESSION_MAX_AGE } from '@/lib/session'
 
 export async function POST(req: NextRequest) {
   try {
-    const { access_token } = await req.json()
-    if (!access_token) {
-      return NextResponse.json({ error: 'No token' }, { status: 400 })
+    const { code, redirect_uri } = await req.json()
+    if (!code || !redirect_uri) {
+      return NextResponse.json({ error: 'Missing code or redirect_uri' }, { status: 400 })
     }
 
-    // Get user info from Supabase using the access token
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
-    const { data: { user }, error } = await supabase.auth.getUser(access_token)
-    if (error || !user || !user.email) {
-      console.error('[google-callback] getUser error:', error)
-      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    // Exchange code for tokens directly with Google
+    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID!,
+        client_secret: process.env.GOOGLE_CLIENT_SECRET!,
+        code,
+        redirect_uri,
+        grant_type: 'authorization_code',
+      }),
+    })
+
+    const tokens = await tokenRes.json()
+    if (!tokens.access_token) {
+      console.error('[google-callback] token exchange failed:', tokens)
+      return NextResponse.json({ error: 'Token exchange failed' }, { status: 401 })
+    }
+
+    // Get user profile from Google
+    const userRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: { Authorization: `Bearer ${tokens.access_token}` },
+    })
+    const googleUser = await userRes.json()
+
+    if (!googleUser.email) {
+      return NextResponse.json({ error: 'No email from Google' }, { status: 401 })
     }
 
     const admin = getSupabaseAdmin()
 
-    // Find existing profile by email
+    // Find or create profile
     const { data: existing } = await admin
       .from('profiles')
       .select('id, role, onboarding_complete')
-      .eq('email', user.email)
+      .eq('email', googleUser.email)
       .single()
 
     let userId: string
@@ -36,17 +53,17 @@ export async function POST(req: NextRequest) {
     if (existing) {
       userId = existing.id
       await admin.from('profiles').update({
-        full_name: user.user_metadata?.full_name ?? undefined,
-        avatar_url: user.user_metadata?.avatar_url ?? undefined,
+        full_name: googleUser.name ?? undefined,
+        avatar_url: googleUser.picture ?? undefined,
       }).eq('id', existing.id)
     } else {
       const { data: newProfile, error: createErr } = await admin
         .from('profiles')
         .insert({
           phone: null,
-          email: user.email,
-          full_name: user.user_metadata?.full_name ?? null,
-          avatar_url: user.user_metadata?.avatar_url ?? null,
+          email: googleUser.email,
+          full_name: googleUser.name ?? null,
+          avatar_url: googleUser.picture ?? null,
         })
         .select('id')
         .single()
