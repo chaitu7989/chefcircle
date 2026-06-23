@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
     const tokens = await tokenRes.json()
     if (!tokens.access_token) {
       console.error('[google-callback] token exchange failed:', tokens)
-      return NextResponse.json({ error: 'Token exchange failed' }, { status: 401 })
+      return NextResponse.json({ error: tokens.error_description || 'Token exchange failed' }, { status: 401 })
     }
 
     // Get user profile from Google
@@ -40,23 +40,29 @@ export async function POST(req: NextRequest) {
 
     const admin = getSupabaseAdmin()
 
-    // Find or create profile
+    // Find existing profile — maybeSingle returns null (not error) when no row found
     const { data: existing } = await admin
       .from('profiles')
       .select('id, role, onboarding_complete')
       .eq('email', googleUser.email)
-      .single()
+      .maybeSingle()
 
     let userId: string
+    let role: string
+    let onboardingComplete: boolean
     let isNewUser = false
 
     if (existing) {
+      // Returning user — update avatar/name silently
       userId = existing.id
+      role = existing.role ?? 'customer'
+      onboardingComplete = existing.onboarding_complete ?? false
       await admin.from('profiles').update({
         full_name: googleUser.name ?? undefined,
         avatar_url: googleUser.picture ?? undefined,
       }).eq('id', existing.id)
     } else {
+      // New user — create profile
       const { data: newProfile, error: createErr } = await admin
         .from('profiles')
         .insert({
@@ -65,21 +71,34 @@ export async function POST(req: NextRequest) {
           full_name: googleUser.name ?? null,
           avatar_url: googleUser.picture ?? null,
         })
-        .select('id')
+        .select('id, role, onboarding_complete')
         .single()
 
       if (createErr || !newProfile) {
-        console.error('[google-callback] insert error:', createErr)
-        return NextResponse.json({ error: 'Failed to create profile' }, { status: 500 })
+        // Duplicate email — someone already registered with this email via phone
+        // Find and use that profile instead
+        const { data: fallback } = await admin
+          .from('profiles')
+          .select('id, role, onboarding_complete')
+          .eq('email', googleUser.email)
+          .maybeSingle()
+
+        if (!fallback) {
+          console.error('[google-callback] insert error:', createErr)
+          return NextResponse.json({ error: createErr?.message ?? 'Failed to create profile' }, { status: 500 })
+        }
+        userId = fallback.id
+        role = fallback.role ?? 'customer'
+        onboardingComplete = fallback.onboarding_complete ?? false
+      } else {
+        userId = newProfile.id
+        role = newProfile.role ?? 'customer'
+        onboardingComplete = newProfile.onboarding_complete ?? false
+        isNewUser = true
       }
-      userId = newProfile.id
-      isNewUser = true
     }
 
-    const role = existing?.role ?? 'customer'
-    const onboardingComplete = existing?.onboarding_complete ?? false
-
-    const token = await signSession(userId, role)
+    const token = await signSession(userId, role as 'customer' | 'chef')
     const redirectTo = (isNewUser || !onboardingComplete)
       ? '/auth/onboarding'
       : role === 'chef' ? '/chef/dashboard' : '/customer/dashboard'
@@ -96,6 +115,6 @@ export async function POST(req: NextRequest) {
 
   } catch (err) {
     console.error('[google-callback] error:', err)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return NextResponse.json({ error: String(err) }, { status: 500 })
   }
 }
